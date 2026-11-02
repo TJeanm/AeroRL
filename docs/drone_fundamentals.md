@@ -171,14 +171,14 @@ allocator or a new thrust/torque controller. Its small predefined pulses use:
 
 ```text
 collective increase:   n_i = n_hover * sqrt(1 + 0.10) for every motor
-positive roll:         n_i = n_hover * sqrt(1 + 0.002 * [-1,-1,+1,+1]_i)
-positive pitch:        n_i = n_hover * sqrt(1 + 0.002 * [-1,+1,+1,-1]_i)
-positive yaw:          n_i = n_hover * sqrt(1 + 0.002 * [-1,+1,-1,+1]_i)
+positive roll:         n_i = n_hover * sqrt(1 + 0.008 * [-1,-1,+1,+1]_i)
+positive pitch:        n_i = n_hover * sqrt(1 + 0.008 * [-1,+1,+1,-1]_i)
+positive yaw:          n_i = n_hover * sqrt(1 + 0.008 * [-1,+1,-1,+1]_i)
 ```
 
 The balanced attitude patterns keep total thrust exactly `mg` before saturation
-while producing one body torque. The counterpulse reverses the signs inside the
-square root. A 10% RPM increase would produce **21% more thrust**; the square root
+while producing one body torque. The updated attitude demonstration uses one
+0.3 s pulse, 0.1 s coast and then PID recovery; it has no attitude counterpulse. A 10% RPM increase would produce **21% more thrust**; the square root
 is why our collective pulse produces precisely 10% more thrust instead.
 
 The basic physical interpretation, away from contacts, is:
@@ -297,18 +297,19 @@ uses upstream `sync()`; headless runs advance the same simulated time faster.
 The earlier infrastructure smoke test uses 48 Hz control. Comparing the unchanged
 PID at 48, 120 and 240 Hz revealed persistent motor and angular-rate oscillations
 at 48 Hz during the position maneuver. This demonstration uses the upstream
-default 240 Hz control rate and smaller attitude pulses for moderate recovery
-motion. Controller gains are unchanged. Position convergence alone did not catch
-the oscillation; a test also checks final body-rate RMS.
+default 240 Hz control rate. The motor-allocation milestone subsequently increased
+the attitude pulse for visibility and moved PID recovery earlier. Controller gains
+are unchanged. Position convergence alone did not catch the oscillation; a test
+also checks final body-rate RMS.
 
-| Experiment | From 0 to 1 s | Excitation | From 2 s onward |
+| Experiment | From 0 to 1 s | Excitation | Recovery / hold |
 |---|---|---|---|
 | `hover` | Equal equilibrium RPM | Same equilibrium command throughout | Open loop throughout |
 | `collective-up` | Equilibrium RPM | +10% thrust at 1–1.5 s; −10% at 1.5–2 s | Existing PID returns to initial position |
 | `collective-down` | Equilibrium RPM | −10% thrust at 1–1.5 s; +10% at 1.5–2 s | Existing PID returns to initial position |
-| `roll` | Equilibrium RPM | Positive roll pulse at 1–1.25 s, reverse at 1.25–1.5 s, coast to 2 s | Existing PID recovers |
-| `pitch` | Equilibrium RPM | Same timing, positive pitch pattern | Existing PID recovers |
-| `yaw` | Equilibrium RPM | Same timing, positive yaw pattern | Existing PID recovers |
+| `roll` | Equilibrium RPM | Positive roll pulse at 1–1.3 s, coast to 1.4 s | Existing PID recovers from 1.4 s |
+| `pitch` | Equilibrium RPM | Same timing, positive pitch pattern | Existing PID recovers from 1.4 s |
+| `yaw` | Equilibrium RPM | Same timing, positive yaw pattern | Existing PID recovers from 1.4 s |
 | `position` | PID holds `[0,0,1]` | At 1 s step target to `[.4,-.2,1.2]` m | PID holds new target |
 
 Every experiment starts level at `[0,0,1]` m with zero velocity. Each gets a fresh
@@ -328,7 +329,7 @@ velocity is transformed using the orientation at the observation timestamp.
 - **Hover:** thrust equals weight and the initial pose remains stationary. Perfect
   initial conditions make open-loop hover look stable; it has no restoring feedback.
 - **Collective:** thrust changes velocity first; position accumulates the motion.
-  The reversed pulse brakes it; PID later returns the position to its target.
+  The reversed collective pulse brakes it; PID later returns the position to its target.
 - **Roll/pitch:** torque changes angular rate first, then attitude. Tilt redirects
   thrust and produces horizontal motion and some altitude loss even when `T=mg`.
 - **Yaw:** alternating motor reaction torques turn the body with little translation
@@ -354,7 +355,7 @@ initial torque-induced angular acceleration with PyBullet, execute every
 experiment without a GUI, check position convergence and verify CSV/JSON/PNG
 output. They are simulation checks, not validation against real flight data.
 
-## Validation of this milestone
+## Original milestone validation
 
 On the local Apple M3, all **21 tests passed**, along with Ruff lint/format,
 `pip check` and Git whitespace checks. All seven six-second GUI experiments
@@ -364,3 +365,21 @@ completed with the Apple M3 OpenGL renderer and clean thread shutdown. Each save
 the last second was 0.000328 rad/s. Hover remained at `[0,0,1]` m. The remaining
 test warnings are upstream Gymnasium space-bound precision warnings described
 above. No physical hardware validation is implied.
+
+## Motor-allocation milestone update
+
+See [Motor Allocation](motor_allocation.md) for the inverse wrench-to-RPM mapping,
+explicit saturation strategy and new validation cases. The fundamentals camera
+now follows the vehicle at 0.55 m distance. Roll/pitch/yaw use one stronger pulse
+and earlier PID recovery, as described in the timing table above. Example:
+
+```sh
+.venv/bin/python scripts/drone_fundamentals.py --experiment roll --pulse-magnitude 0.008 --pulse-duration 0.3 --camera-distance 0.55
+```
+
+These options affect only the attitude experiments. Maximum absolute roll, pitch
+and yaw (degrees) and maximum translation (m) are printed and saved in
+`parameters.json` as `motion_summary`. Maxima include PID recovery. Shared model
+inspection/camera helpers and existing CSV/plot functions now live in
+`aerorl/utils/simulation.py` and `aerorl/utils/telemetry.py`; the original script
+still exposes the functions used by its tests. No physics or PID gains changed.

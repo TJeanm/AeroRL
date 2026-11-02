@@ -109,7 +109,9 @@ def test_each_experiment_runs_headlessly_and_records_expected_response(env, name
         assert data["pid_active"].all()
         assert data["state"][-1, 0] > 0.2
     if name not in ("hover", "position"):
-        np.testing.assert_array_equal(data["pid_active"], data["command_time_s"] >= 2)
+        np.testing.assert_array_equal(
+            data["pid_active"], data["command_time_s"] >= settings["recovery_start_s"]
+        )
 
 
 def test_position_maneuver_reaches_requested_position(env):
@@ -119,6 +121,30 @@ def test_position_maneuver_reaches_requested_position(env):
     # Position alone can hide a motor/rate limit cycle at insufficient control rates.
     tail = data["time_s"] > 5
     assert np.sqrt(np.mean(data["omega_body"][tail] ** 2)) < 0.02
+
+
+@pytest.mark.parametrize("name,index", [("roll", 0), ("pitch", 1), ("yaw", 2)])
+def test_attitude_pulse_is_visible_and_pid_recovers(env, name, index):
+    data, settings = run_experiment(env, name, duration=6)
+    raw = ~data["pid_active"]
+    peak = np.rad2deg(abs(data["state"][raw, 7 + index])).max()
+    assert 8 < peak < 30
+    assert data["state"][:, 2].min() > 0.8
+    np.testing.assert_allclose(data["state"][-1, :3], [0, 0, 1], atol=0.03)
+    assert abs(np.rad2deg(data["state"][-1, 7 + index])) < 2
+    assert settings["motion_summary"]["max_translation_m"] < 0.5
+
+
+def test_pulse_magnitude_and_duration_are_configurable(env):
+    first, _ = run_experiment(env, "roll", duration=3, pulse_magnitude=0.004, pulse_duration=0.15)
+    second, settings = run_experiment(
+        env, "roll", duration=3, pulse_magnitude=0.008, pulse_duration=0.3
+    )
+    assert np.count_nonzero(second["phase"] == "pulse") > np.count_nonzero(
+        first["phase"] == "pulse"
+    )
+    assert second["applied_wrench"][:, 1].max() > first["applied_wrench"][:, 1].max()
+    assert settings["pulse_duration_s"] == 0.3
 
 
 def test_telemetry_csv_metadata_and_plot_are_saved(env, tmp_path):
