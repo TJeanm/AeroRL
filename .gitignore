@@ -1,0 +1,48 @@
+# Python and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local environments and configuration
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.python-version.local
+
+# macOS and editors
+.DS_Store
+._*
+.AppleDouble/
+.LSOverride
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Generated simulation/training artifacts
+results/*
+!results/.gitkeep
+checkpoints/
+logs/
+runs/
+wandb/
+videos/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tfevents.*
+
+# Notebook scratch files
+.ipynb_checkpoints/
